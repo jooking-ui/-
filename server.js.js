@@ -1,13 +1,15 @@
-require('dotenv').config();
-
+이걸로 전체 교체해주세요:
+jsrequire('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const Parser = require('rss-parser');
-
 const app = express();
 app.use(cors());
-
 const parser = new Parser();
+
+app.get('/', (req, res) => {
+  res.send('OK');
+});
 
 async function getNews() {
   const globalFeeds = [
@@ -16,17 +18,14 @@ async function getNews() {
     'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml',
     'https://www.hdfgroup.org/feed/',
   ];
-
   const koreaFeeds = [
     'https://rss.etnews.com/Section901.xml',
     'https://feeds.feedburner.com/etnews/all',
   ];
-
   const [globalResults, koreaResults] = await Promise.all([
     Promise.allSettled(globalFeeds.map(url => parser.parseURL(url))),
     Promise.allSettled(koreaFeeds.map(url => parser.parseURL(url))),
   ]);
-
   const globalItems = globalResults
     .filter(r => r.status === 'fulfilled')
     .flatMap(r => r.value.items)
@@ -37,7 +36,6 @@ async function getNews() {
       content: item.contentSnippet || item.summary || '내용 없음',
       tag: '🌐 글로벌 AI',
     }));
-
   const koreaItems = koreaResults
     .filter(r => r.status === 'fulfilled')
     .flatMap(r => r.value.items)
@@ -48,7 +46,6 @@ async function getNews() {
       content: item.contentSnippet || item.summary || '내용 없음',
       tag: '🇰🇷 국내 AI',
     }));
-
   return [...globalItems, ...koreaItems];
 }
 
