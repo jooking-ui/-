@@ -8,17 +8,18 @@ app.use(cors());
 
 const parser = new Parser();
 
-// 기본 확인용
+// 서버 확인용
 app.get('/', (req, res) => {
   res.send('OK');
 });
 
 async function getNews() {
   const globalFeeds = [
-    'https://www.reuters.com/technology/rss', // 🔥 최신 강함
+    'https://www.reuters.com/technology/rss',
     'https://www.theverge.com/rss/index.xml',
     'https://venturebeat.com/category/ai/feed/',
     'https://www.artificialintelligence-news.com/feed/',
+    'https://feeds.arstechnica.com/arstechnica/technology-lab', // 🔥 추가 (좋음)
   ];
 
   const koreaFeeds = [
@@ -26,13 +27,12 @@ async function getNews() {
     'https://feeds.feedburner.com/etnews/all',
   ];
 
-  // 병렬 요청
   const [globalResults, koreaResults] = await Promise.all([
     Promise.allSettled(globalFeeds.map(url => parser.parseURL(url))),
     Promise.allSettled(koreaFeeds.map(url => parser.parseURL(url))),
   ]);
 
-  // 글로벌 뉴스
+  // 글로벌
   const globalItems = globalResults
     .filter(r => r.status === 'fulfilled')
     .flatMap(r => r.value.items)
@@ -44,7 +44,7 @@ async function getNews() {
       date: item.pubDate || item.isoDate || null,
     }));
 
-  // 국내 뉴스
+  // 국내
   const koreaItems = koreaResults
     .filter(r => r.status === 'fulfilled')
     .flatMap(r => r.value.items)
@@ -56,10 +56,14 @@ async function getNews() {
       date: item.pubDate || item.isoDate || null,
     }));
 
-  // 🔥 합치고 최신순 정렬 (핵심)
-  const allNews = [...globalItems, ...koreaItems]
-    .filter(item => item.date) // 날짜 없는거 제거
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  // 🔥 핵심: 날짜 없어도 살리고 정렬
+  const allNews = [...globalItems, ...koreaItems];
+
+  allNews.sort((a, b) => {
+    const dateA = a.date ? new Date(a.date).getTime() : 0;
+    const dateB = b.date ? new Date(b.date).getTime() : 0;
+    return dateB - dateA;
+  });
 
   // 🔥 최신 20개만
   return allNews.slice(0, 20);
