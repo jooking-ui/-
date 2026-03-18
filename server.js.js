@@ -34,7 +34,9 @@ async function getNews() {
       link: item.link,
       content: item.contentSnippet || item.summary || '내용 없음',
       tag: '🌐 글로벌 AI',
+      date: item.pubDate || item.isoDate || null,
     }));
+
   const koreaItems = koreaResults
     .filter(r => r.status === 'fulfilled')
     .flatMap(r => r.value.items)
@@ -44,6 +46,7 @@ async function getNews() {
       link: item.link,
       content: item.contentSnippet || item.summary || '내용 없음',
       tag: '🇰🇷 국내 AI',
+      date: item.pubDate || item.isoDate || null,
     }));
   return [...globalItems, ...koreaItems];
 }
