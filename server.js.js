@@ -1,5 +1,4 @@
-이걸로 전체 교체해주세요:
-jsrequire('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const Parser = require('rss-parser');
