@@ -57,6 +57,6 @@ app.get('/news', async (req, res) => {
   res.json(news);
 });
 
-app.listen(3000, '0.0.0.0', () => {
-  console.log('🔥 서버 실행중 http://localhost:3000');
+app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
+  console.log('🔥 서버 실행중');
 });
