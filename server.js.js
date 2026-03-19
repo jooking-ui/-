@@ -33,39 +33,6 @@ async function translate(text) {
   return text;
 }
 
-// ─── 구글 뉴스 RSS 검색 URL 생성 ───
-function googleNewsRSS(query, lang = 'en') {
-  const encoded = encodeURIComponent(query);
-  if (lang === 'ko') {
-    return `https://news.google.com/rss/search?q=${encoded}&hl=ko&gl=KR&ceid=KR:ko`;
-  }
-  return `https://news.google.com/rss/search?q=${encoded}&hl=en-US&gl=US&ceid=US:en`;
-}
-
-// ─── 검색 쿼리 설정 ───
-// 글로벌: 지정 회사 AI/반도체 뉴스
-const GLOBAL_QUERIES = [
-  { q: 'Nvidia AI GPU',           tag: '🟢 Nvidia' },
-  { q: 'Intel AI semiconductor',  tag: '🔵 Intel' },
-  { q: 'AMD AI chip',             tag: '🔴 AMD' },
-  { q: 'Qualcomm AI',             tag: '🟣 Qualcomm' },
-  { q: 'TSMC semiconductor',      tag: '🟡 TSMC' },
-  { q: 'Broadcom AI',             tag: '🟠 Broadcom' },
-  { q: 'Micron HBM memory',       tag: '🔵 Micron' },
-  { q: 'Google AI Gemini',        tag: '🔵 Google' },
-  { q: 'Tesla AI robot',          tag: '⚫ Tesla' },
-  { q: 'Microsoft AI Copilot',    tag: '🔵 Microsoft' },
-  { q: 'Apple AI Siri',           tag: '⚪ Apple' },
-  { q: 'HBF high bandwidth flash',tag: '🔴 HBF' },
-];
-
-// 국내: 한국어 구글 뉴스
-const KOREA_QUERIES = [
-  { q: '삼성전자 AI 반도체',    tag: '🇰🇷 삼성' },
-  { q: 'SK하이닉스 HBM HBF',   tag: '🇰🇷 SK하이닉스' },
-  { q: '네이버 카카오 AI',      tag: '🇰🇷 네이버/카카오' },
-  { q: '한국 인공지능 뉴스',    tag: '🇰🇷 국내 AI' },
-];
 
 // ─── TOP 5 중요도 점수 ───
 function calcScore(item) {
@@ -103,45 +70,127 @@ function calcScore(item) {
   return score;
 }
 
+// ─── 회사명 키워드 매핑 ───
+const COMPANY_FILTERS = [
+  { keywords: ['nvidia', 'nvda'],              tag: '🟢 Nvidia' },
+  { keywords: ['intel'],                        tag: '🔵 Intel' },
+  { keywords: ['amd', 'advanced micro'],        tag: '🔴 AMD' },
+  { keywords: ['qualcomm'],                     tag: '🟣 Qualcomm' },
+  { keywords: ['tsmc', 'taiwan semiconductor'], tag: '🟡 TSMC' },
+  { keywords: ['broadcom'],                     tag: '🟠 Broadcom' },
+  { keywords: ['micron'],                       tag: '🔵 Micron' },
+  { keywords: ['google', 'alphabet', 'gemini', 'deepmind'], tag: '🔵 Google' },
+  { keywords: ['tesla', 'optimus robot'],       tag: '⚫ Tesla' },
+  { keywords: ['microsoft', 'copilot', 'azure ai'], tag: '🔵 Microsoft' },
+  { keywords: ['apple', 'siri'],                tag: '⚪ Apple' },
+  { keywords: ['hbf', 'high bandwidth flash'],  tag: '🔴 HBF' },
+  { keywords: ['hbm', 'hbm4', 'hbm3'],         tag: '💾 HBM' },
+  { keywords: ['openai', 'gpt', 'chatgpt'],     tag: '🤖 OpenAI' },
+  { keywords: ['anthropic', 'claude'],          tag: '🟣 Anthropic' },
+];
+
+function getCompanyTag(title, content) {
+  const text = ((title || '') + ' ' + (content || '')).toLowerCase();
+  for (const { keywords, tag } of COMPANY_FILTERS) {
+    if (keywords.some(kw => text.includes(kw))) return tag;
+  }
+  return '🌐 글로벌 AI';
+}
+
 // ─── 뉴스 수집 ───
 async function fetchAllNews() {
-  const allQueries = [
-    ...GLOBAL_QUERIES.map(q => ({ ...q, lang: 'en', region: '글로벌' })),
-    ...KOREA_QUERIES.map(q => ({ ...q, lang: 'ko', region: '한국' })),
+  // 클라우드에서도 막히지 않는 직접 RSS 피드
+  const globalFeeds = [
+    'https://venturebeat.com/category/ai/feed/',
+    'https://the-decoder.com/feed/',
+    'https://www.unite.ai/feed/',
+    'https://www.artificialintelligence-news.com/feed/',
+    'https://feeds.arstechnica.com/arstechnica/technology-lab',
+    'https://semianalysis.com/feed/',
+    'https://blocksandfiles.com/feed/',
+    'https://www.anandtech.com/rss/',
+    'https://thenextweb.com/feed/',
   ];
 
-  const results = await Promise.allSettled(
-    allQueries.map(({ q, lang }) => parser.parseURL(googleNewsRSS(q, lang)))
-  );
+  const koreaFeeds = [
+    'https://rss.etnews.com/Section901.xml',
+    'https://www.aitimes.com/rss/allArticle.xml',
+    'https://www.aitimes.kr/rss/allArticle.xml',
+    'https://rss.zdnet.co.kr/zdnet/category/news',
+  ];
+
+  // 관련 키워드 (이 중 하나라도 있으면 포함)
+  const INCLUDE_KEYWORDS = [
+    'ai', 'artificial intelligence', 'llm', 'gpu', 'chip',
+    'semiconductor', 'hbm', 'hbf', 'nvidia', 'intel', 'amd',
+    'qualcomm', 'tsmc', 'broadcom', 'micron', 'google', 'tesla',
+    'microsoft', 'apple', 'openai', 'anthropic', 'robot', 'memory',
+    '인공지능', '반도체', '삼성', 'sk하이닉스', '네이버', '카카오',
+  ];
+
+  const [globalResults, koreaResults] = await Promise.allSettled([
+    Promise.allSettled(globalFeeds.map(url => parser.parseURL(url))),
+    Promise.allSettled(koreaFeeds.map(url => parser.parseURL(url))),
+  ]);
 
   const seen = new Set();
   const items = [];
 
-  results.forEach((result, i) => {
+  // 글로벌 피드 처리
+  const gResults = globalResults.status === 'fulfilled' ? globalResults.value : [];
+  gResults.forEach((result, i) => {
     if (result.status !== 'fulfilled') {
-      console.log(`⚠️ 피드 실패 [${allQueries[i].q}]:`, result.reason?.message || result.reason);
+      console.log(`⚠️ 글로벌 피드 실패 [${globalFeeds[i]}]:`, result.reason?.message);
       return;
     }
-    const { tag, lang, region } = allQueries[i];
-    result.value.items.slice(0, 3).forEach(item => {
-      if (seen.has(item.title)) return;
-      seen.add(item.title);
-      const isKorean = lang === 'ko';
+    result.value.items.forEach(item => {
+      const title = item.title || '';
+      const content = (item.contentSnippet || item.summary || '').slice(0, 300);
+      const text = (title + ' ' + content).toLowerCase();
+
+      if (seen.has(title)) return;
+      if (!INCLUDE_KEYWORDS.some(kw => text.includes(kw))) return;
+      seen.add(title);
+
       items.push({
-        title:      item.title || '',
-        titleKo:    isKorean ? item.title : null,
-        link:       item.link || '',
-        content:    (item.contentSnippet || item.summary || '').slice(0, 300),
-        contentKo:  isKorean ? (item.contentSnippet || '').slice(0, 300) : null,
-        tag,
-        region,
-        date:       item.pubDate || item.isoDate || null,
-        translated: isKorean,
+        title,
+        titleKo: null,
+        link: item.link || '',
+        content,
+        contentKo: null,
+        tag: getCompanyTag(title, content),
+        region: '글로벌',
+        date: item.pubDate || item.isoDate || null,
+        translated: false,
       });
     });
   });
 
-  // 날짜순 정렬
+  // 국내 피드 처리
+  const kResults = koreaResults.status === 'fulfilled' ? koreaResults.value : [];
+  kResults.forEach((result, i) => {
+    if (result.status !== 'fulfilled') {
+      console.log(`⚠️ 국내 피드 실패 [${koreaFeeds[i]}]:`, result.reason?.message);
+      return;
+    }
+    result.value.items.forEach(item => {
+      const title = item.title || '';
+      if (seen.has(title)) return;
+      seen.add(title);
+      items.push({
+        title,
+        titleKo: title,
+        link: item.link || '',
+        content: (item.contentSnippet || item.summary || '').slice(0, 300),
+        contentKo: (item.contentSnippet || item.summary || '').slice(0, 300),
+        tag: getCompanyTag(title, item.contentSnippet || '') || '🇰🇷 국내 AI',
+        region: '한국',
+        date: item.pubDate || item.isoDate || null,
+        translated: true,
+      });
+    });
+  });
+
   items.sort((a, b) => {
     const da = a.date ? new Date(a.date).getTime() : 0;
     const db = b.date ? new Date(b.date).getTime() : 0;
