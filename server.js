@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const Parser = require('rss-parser');
-
+ 
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -10,9 +10,9 @@ const parser = new Parser({
   headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RSSReader/1.0)' },
   timeout: 10000,
 });
-
+ 
 app.get('/', (req, res) => res.send('OK'));
-
+ 
 // ─── 번역 함수 (MyMemory API) ───
 async function translate(text) {
   if (!text || text.trim() === '') return text;
@@ -32,13 +32,13 @@ async function translate(text) {
   }
   return text;
 }
-
-
+ 
+ 
 // ─── TOP 5 중요도 점수 ───
 function calcScore(item) {
   const text = ((item.title || '') + ' ' + (item.content || '')).toLowerCase();
   let score = 0;
-
+ 
   const keywords = [
     // HBF 최우선
     { kw: 'hbf',                  s: 100 },
@@ -57,9 +57,9 @@ function calcScore(item) {
     { kw: 'agent',    s: 25 }, { kw: 'humanoid',s: 30 },
     { kw: 'robot',    s: 25 }, { kw: 'funding', s: 18 },
   ];
-
+ 
   keywords.forEach(({ kw, s }) => { if (text.includes(kw)) score += s; });
-
+ 
   // 최신 기사 가산점
   if (item.date) {
     const h = (Date.now() - new Date(item.date).getTime()) / 3600000;
@@ -69,7 +69,7 @@ function calcScore(item) {
   }
   return score;
 }
-
+ 
 // ─── 회사명 키워드 매핑 ───
 const COMPANY_FILTERS = [
   { keywords: ['nvidia', 'nvda'],              tag: '🟢 Nvidia' },
@@ -88,7 +88,7 @@ const COMPANY_FILTERS = [
   { keywords: ['openai', 'gpt', 'chatgpt'],     tag: '🤖 OpenAI' },
   { keywords: ['anthropic', 'claude'],          tag: '🟣 Anthropic' },
 ];
-
+ 
 function getCompanyTag(title, content) {
   const text = ((title || '') + ' ' + (content || '')).toLowerCase();
   for (const { keywords, tag } of COMPANY_FILTERS) {
@@ -96,7 +96,7 @@ function getCompanyTag(title, content) {
   }
   return '🌐 글로벌 AI';
 }
-
+ 
 // ─── 뉴스 수집 ───
 async function fetchAllNews() {
   // 클라우드에서도 막히지 않는 직접 RSS 피드
@@ -111,14 +111,16 @@ async function fetchAllNews() {
     'https://www.anandtech.com/rss/',
     'https://thenextweb.com/feed/',
   ];
-
+ 
   const koreaFeeds = [
-    'https://rss.etnews.com/Section901.xml',
-    'https://www.aitimes.com/rss/allArticle.xml',
-    'https://www.aitimes.kr/rss/allArticle.xml',
-    'https://rss.zdnet.co.kr/zdnet/category/news',
+    'https://www.aitimes.com/rss/allArticle.xml',      // AI타임스 (작동 확인)
+    'https://www.aitimes.kr/rss/allArticle.xml',       // AI타임스KR
+    'https://rss.etnews.com/Section901.xml',            // 전자신문 AI
+    'https://rss.etnews.com/Section902.xml',            // 전자신문 반도체
+    'https://www.bloter.net/archives/category/ai/feed', // 블로터 AI
+    'https://www.itworld.co.kr/t/62017/%EC%9D%B8%EA%B3%B5%EC%A7%80%EB%8A%A5/rss', // IT World AI
   ];
-
+ 
   // 관련 키워드 (이 중 하나라도 있으면 포함)
   const INCLUDE_KEYWORDS = [
     'ai', 'artificial intelligence', 'llm', 'gpu', 'chip',
@@ -127,15 +129,15 @@ async function fetchAllNews() {
     'microsoft', 'apple', 'openai', 'anthropic', 'robot', 'memory',
     '인공지능', '반도체', '삼성', 'sk하이닉스', '네이버', '카카오',
   ];
-
+ 
   const [globalResults, koreaResults] = await Promise.allSettled([
     Promise.allSettled(globalFeeds.map(url => parser.parseURL(url))),
     Promise.allSettled(koreaFeeds.map(url => parser.parseURL(url))),
   ]);
-
+ 
   const seen = new Set();
   const items = [];
-
+ 
   // 글로벌 피드 처리
   const gResults = globalResults.status === 'fulfilled' ? globalResults.value : [];
   gResults.forEach((result, i) => {
@@ -147,11 +149,11 @@ async function fetchAllNews() {
       const title = item.title || '';
       const content = (item.contentSnippet || item.summary || '').slice(0, 300);
       const text = (title + ' ' + content).toLowerCase();
-
+ 
       if (seen.has(title)) return;
       if (!INCLUDE_KEYWORDS.some(kw => text.includes(kw))) return;
       seen.add(title);
-
+ 
       items.push({
         title,
         titleKo: null,
@@ -165,7 +167,7 @@ async function fetchAllNews() {
       });
     });
   });
-
+ 
   // 국내 피드 처리
   const kResults = koreaResults.status === 'fulfilled' ? koreaResults.value : [];
   kResults.forEach((result, i) => {
@@ -190,38 +192,38 @@ async function fetchAllNews() {
       });
     });
   });
-
+ 
   items.sort((a, b) => {
     const da = a.date ? new Date(a.date).getTime() : 0;
     const db = b.date ? new Date(b.date).getTime() : 0;
     return db - da;
   });
-
+ 
   console.log(`✅ 총 ${items.length}개 수집 (글로벌 + 국내)`);
   return items.slice(0, 40);
 }
-
+ 
 // ─── 캐시 ───
 let cache = { news: [], top5: [], timestamp: 0 };
 const CACHE_TTL = 10 * 60 * 1000;
-
+ 
 async function getOrFetch() {
   if (cache.news.length && Date.now() - cache.timestamp < CACHE_TTL) {
     console.log('📦 캐시 사용');
     return cache;
   }
-
+ 
   const news = await fetchAllNews();
-
+ 
   // TOP 5 선정
   const top5 = [...news]
     .map(n => ({ ...n, _score: calcScore(n) }))
     .sort((a, b) => b._score - a._score)
     .slice(0, 5);
-
+ 
   console.log('🏆 TOP 5:');
   top5.forEach((n, i) => console.log(`  ${i+1}. [${n._score}점] ${n.title?.slice(0, 55)}`));
-
+ 
   // TOP 5 번역 (우선)
   await Promise.all(top5.map(async n => {
     if (!n.translated) {
@@ -230,7 +232,7 @@ async function getOrFetch() {
       n.translated = true;
     }
   }));
-
+ 
   // 나머지 백그라운드 번역
   ;(async () => {
     for (const n of news) {
@@ -243,18 +245,18 @@ async function getOrFetch() {
     }
     console.log('✅ 전체 번역 완료');
   })();
-
+ 
   cache = { news, top5, timestamp: Date.now() };
   return cache;
 }
-
+ 
 // ─── 엔드포인트 ───
 const toDisplay = n => ({
   ...n,
   displayTitle:   n.titleKo   || n.title,
   displayContent: n.contentKo || n.content,
 });
-
+ 
 app.get('/news', async (req, res) => {
   try {
     const { news } = await getOrFetch();
@@ -264,7 +266,7 @@ app.get('/news', async (req, res) => {
     res.status(500).json({ error: '뉴스 가져오기 실패' });
   }
 });
-
+ 
 app.get('/top5', async (req, res) => {
   try {
     const { top5 } = await getOrFetch();
@@ -274,12 +276,12 @@ app.get('/top5', async (req, res) => {
     res.status(500).json({ error: 'TOP5 실패' });
   }
 });
-
+ 
 app.post('/refresh', (req, res) => {
   cache = { news: [], top5: [], timestamp: 0 };
   res.json({ ok: true });
 });
-
+ 
 app.listen(3000, '0.0.0.0', async () => {
   console.log('🔥 서버 실행중 http://0.0.0.0:3000');
   console.log('📡 뉴스 사전 수집 시작...');
